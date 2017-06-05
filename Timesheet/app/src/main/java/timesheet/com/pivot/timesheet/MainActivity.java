@@ -2,20 +2,29 @@ package timesheet.com.pivot.timesheet;
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.provider.BaseColumns;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.sql.Time;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 
 public class MainActivity extends AppCompatActivity {
@@ -40,36 +49,34 @@ public class MainActivity extends AppCompatActivity {
                 file.createNewFile();
             }
 
-            FileWriter fw = new FileWriter(file.getAbsoluteFile());
-            BufferedWriter bw = new BufferedWriter(fw);
-//            bw.write(content);
-            bw.close();
+            XSSFWorkbook workbook = new XSSFWorkbook();
+            XSSFSheet sheet = workbook.createSheet(fileName);
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void readFile()
-    {
-        BufferedReader br = null;
-        try {
-            Date date=new Date();
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM");
-            String fileName = sdf.format(date);
-            String sCurrentLine;
-            br = new BufferedReader(new FileReader(fileName+".csv"));
-            while ((sCurrentLine = br.readLine()) != null) {
-                System.out.println(sCurrentLine);
+            int rowNum = 0;
+            System.out.println("Creating excel");
+            String []title =new String[]{"日付", "出勤時間", "退社時間", "備考"};
+            TimesheetDbHelper timesheetDbHelper =new TimesheetDbHelper(this);
+            ArrayList<Timesheet>getTimesheetList =timesheetDbHelper.getAllTimesheet(fileName);
+            for (Timesheet timesheet:getTimesheetList) {
+                Row row = sheet.createRow(rowNum++);
+                int colNum = 0;
+                row.createCell(colNum++).setCellValue(timesheet.getDate());
+                row.createCell(colNum++).setCellValue(timesheet.getStart());
+                row.createCell(colNum++).setCellValue(timesheet.getEnd());
+                row.createCell(colNum++).setCellValue(timesheet.getReasonOff());
             }
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
             try {
-                if (br != null)br.close();
-            } catch (IOException ex) {
-                ex.printStackTrace();
+                FileOutputStream outputStream = new FileOutputStream(fileName);
+                workbook.write(outputStream);
+                workbook.close();
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
+            System.out.println("Done");
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -153,6 +160,33 @@ public class MainActivity extends AppCompatActivity {
                     selection,
                     selectionArgs);
             return count;
+        }
+
+        /*
+         Getting record, if dateinput != "", will query the month inputted
+         if dateInput="", query this month
+          */
+        public ArrayList<Timesheet> getAllTimesheet(String month) {
+            ArrayList<Timesheet> timesheetList = new ArrayList<Timesheet>();
+            String[]startEndDate = Helper.getStartEndDateOfMonth(month);
+            String selectQuery = "SELECT * FROM " + TimesheetEntry.TABLE_NAME+" WHERE "+
+                    TimesheetEntry.COLUMN_START+">="+startEndDate[0]+" AND "+
+                    TimesheetEntry.COLUMN_END+"<="+startEndDate[1]+ " ODER BY "+
+                    TimesheetEntry.COLUMN_DATE;
+            SQLiteDatabase db = this.getWritableDatabase();
+            Cursor cursor = db.rawQuery(selectQuery, null);
+            if (cursor.moveToFirst()) {
+                do {
+                    Timesheet timesheet = new Timesheet();
+                    timesheet.setDate(cursor.getString(cursor.getColumnIndex(TimesheetEntry.COLUMN_DATE)));
+                    timesheet.setStart(cursor.getString(cursor.getColumnIndex(TimesheetEntry.COLUMN_START)));
+                    timesheet.setEnd(cursor.getString(cursor.getColumnIndex(TimesheetEntry.COLUMN_END)));
+                    timesheet.setOff(cursor.getInt(cursor.getColumnIndex(TimesheetEntry.IS_OFF))==1?true:false);
+                    timesheet.setReasonOff(cursor.getString(cursor.getColumnIndex(TimesheetEntry.NOTE)));
+                    timesheetList.add(timesheet);
+                } while (cursor.moveToNext());
+            }
+            return timesheetList;
         }
     }
 }
